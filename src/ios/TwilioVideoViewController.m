@@ -274,6 +274,7 @@ static TVIRoom *currentRoom;
 - (void)cleanupRemoteParticipant {
     if (self.remoteParticipant) {
         if ([self.remoteParticipant.videoTracks count] > 0) {
+            
             TVIRemoteVideoTrack *videoTrack = self.remoteParticipant.remoteVideoTracks[0].remoteTrack;
             [videoTrack removeRenderer:self.remoteView];
             [self.remoteView removeFromSuperview];
@@ -308,15 +309,33 @@ static TVIRoom *currentRoom;
 
 #pragma mark - TVIRoomDelegate
 
+// we are ignoring null uuid users
 - (void)didConnectToRoom:(nonnull TVIRoom *)room {
     // At the moment, this example only supports rendering one Participant at a time.
     [self logMessage:[NSString stringWithFormat:@"Connected to room %@ as %@", room.name, room.localParticipant.identity]];
     [[TwilioVideoManager getInstance] publishEvent:[[CallEvent of:EVENT_CONNECTED] withRoomCtx:room]];
 
     if (room.remoteParticipants.count > 0) {
-        self.remoteParticipant = room.remoteParticipants[0];
+        for (TVIRemoteParticipant* participant in room.remoteParticipants) {
+            if (![participant.identity isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
+                self.remoteParticipant = participant;
+                self.remoteParticipant.delegate = self;
+            }
+        }        
+    }
+}
+
+// we are ignoring null uuid users
+- (void)room:(nonnull TVIRoom *)room participantDidConnect:(nonnull TVIRemoteParticipant *)participant {
+    if (!self.remoteParticipant && ![participant.identity isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
+        self.remoteParticipant = participant;
         self.remoteParticipant.delegate = self;
     }
+    [self logMessage:[NSString stringWithFormat:@"Participant %@ connected with %lu audio and %lu video tracks",
+                      participant.identity,
+                      (unsigned long)[participant.audioTracks count],
+                      (unsigned long)[participant.videoTracks count]]];
+    [[TwilioVideoManager getInstance] publishEvent:[[CallEvent of:EVENT_PARTICIPANT_CONNECTED] withRoomCtx:room]];
 }
 
 - (void)room:(nonnull TVIRoom *)room didFailToConnectWithError:(nonnull NSError *)error {
@@ -350,18 +369,6 @@ static TVIRoom *currentRoom;
 
 - (void)didReconnectToRoom:(nonnull TVIRoom *)room {
     [[TwilioVideoManager getInstance] publishEvent:[[CallEvent of:EVENT_RECONNECTED] withRoomCtx:room]];
-}
-
-- (void)room:(nonnull TVIRoom *)room participantDidConnect:(nonnull TVIRemoteParticipant *)participant {
-    if (!self.remoteParticipant) {
-        self.remoteParticipant = participant;
-        self.remoteParticipant.delegate = self;
-    }
-    [self logMessage:[NSString stringWithFormat:@"Participant %@ connected with %lu audio and %lu video tracks",
-                      participant.identity,
-                      (unsigned long)[participant.audioTracks count],
-                      (unsigned long)[participant.videoTracks count]]];
-    [[TwilioVideoManager getInstance] publishEvent:[[CallEvent of:EVENT_PARTICIPANT_CONNECTED] withRoomCtx:room]];
 }
 
 - (void)room:(nonnull TVIRoom *)room participantDidDisconnect:(nonnull TVIRemoteParticipant *)participant {
